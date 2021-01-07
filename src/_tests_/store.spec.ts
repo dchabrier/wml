@@ -71,8 +71,8 @@ describe("Walmart stores by location", () => {
 
     it("Should return 2 stores in Boca Raton area within 20 mile radius with mocked data", async () => {
         // request function in storesBySearchTerm function  is mocked to not hit the API
-        const mockedRequest= (Request as jest.Mocked<typeof Request>) = jest.fn();
-      
+        const mockedRequest = (Request as jest.Mocked<typeof Request>) = jest.fn();
+
         mockedRequest.mockImplementationOnce(async () => ({
             "storesBySearchTerm": {
                 "stores": [
@@ -94,5 +94,17 @@ describe("Walmart stores by location", () => {
                 ]
             }
         });
+    });
+
+    it("Should return 'Unexpected error occured.'", async () => {
+        // request function in storesBySearchTerm function  is mocked to not hit the API
+        const mockedRequest = (Request as jest.Mocked<typeof Request>) = jest.fn();
+
+        mockedRequest.mockImplementationOnce(async () => { throw new Error('Unexpected error occured.') });
+
+        const stores: IResponse = await storesBySearchTerm('33487', '20');
+        expect(stores.body).toBeUndefined()
+        expect(stores.success).toBeFalsy();
+        expect(stores.error).toBe('Unexpected error occured.')
     });
 });
