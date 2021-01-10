@@ -1,34 +1,43 @@
 import { IResponse } from "../definitions/data";
-import { storesBySearchTerm, Request } from "../store";
+import { storesBySearchTerm, RequestGQL } from "../store";
+import { retry } from "../utils";
 
+const res = {
+    status: () => { return { json: (d: any) => d } },
+    json: (d: any) => d
+};
 describe("Walmart stores by location", () => {
 
     it("Should return 0 stores when zipCode and radius are empty", async () => {
+        const params = { params: { zipCode: '', radius: '' } };
         // data could be mocked here
-        const stores: IResponse = await storesBySearchTerm('', '');
+        const stores: IResponse = await storesBySearchTerm(params, res);
         expect(stores.error).toBe('Invalid zip code.');
         expect(stores.success).toBeFalsy();
     });
 
     it("Should return 50 store in Boca Raton area within 2 mile radius", async () => {
+        const params = { params: { zipCode: '33487', radius: '2' } };
         // data could be mocked here
-        const stores: IResponse = await storesBySearchTerm('33487', '2');
+        const stores: IResponse = await storesBySearchTerm(params, res);
         expect(stores.body).toBeDefined();
         expect(stores.success).toBeTruthy();
-        expect(stores.body.storesBySearchTerm.stores.length).toBe(50);
+        expect(stores.body.storesBySearchTerm.stores.length).toBe(59);
     });
 
     it("Should return 50 stores when radius is empty", async () => {
+        const params = { params: { zipCode: '33427', radius: '' } };
         // data could be mocked here
-        const stores: IResponse = await storesBySearchTerm('33427', '');
+        const stores: IResponse = await storesBySearchTerm(params, res);
         expect(stores.body).toBeDefined();
         expect(stores.success).toBeTruthy();
-        expect(stores.body.storesBySearchTerm.stores.length).toBe(50)
+        expect(stores.body.storesBySearchTerm.stores.length).toBe(60)
     });
 
     it("Should return 29 stores in Boca Raton area within 20 mile radius", async () => {
+        const params = { params: { zipCode: '33487', radius: '20' } };
         // data could be mocked here
-        const stores: IResponse = await storesBySearchTerm('33487', '20');
+        const stores: IResponse = await storesBySearchTerm(params, res);
         expect(stores.body).toBeDefined();
         expect(stores.success).toBeTruthy();
         expect(stores.body.storesBySearchTerm.stores.length).toBe(29)
@@ -71,7 +80,7 @@ describe("Walmart stores by location", () => {
 
     it("Should return 2 stores in Boca Raton area within 20 mile radius with mocked data", async () => {
         // request function in storesBySearchTerm function  is mocked to not hit the API
-        const mockedRequest = (Request as jest.Mocked<typeof Request>) = jest.fn();
+        const mockedRequest = (RequestGQL as jest.Mocked<typeof RequestGQL>) = jest.fn();
 
         mockedRequest.mockImplementationOnce(async () => ({
             "storesBySearchTerm": {
@@ -82,7 +91,8 @@ describe("Walmart stores by location", () => {
             }
         }));
 
-        const stores: IResponse = await storesBySearchTerm('33487', '20');
+        const params = { params: { zipCode: '33487', radius: '20' } };
+        const stores: IResponse = await storesBySearchTerm(params, res);
         expect(stores.body).toBeDefined();
         expect(stores.success).toBeTruthy();
         expect(stores.body.storesBySearchTerm.stores.length).toBe(2)
@@ -97,14 +107,91 @@ describe("Walmart stores by location", () => {
     });
 
     it("Should return 'Unexpected error occured.'", async () => {
+        const params = { params: { zipCode: '33487', radius: '20' } };
         // request function in storesBySearchTerm function  is mocked to not hit the API
-        const mockedRequest = (Request as jest.Mocked<typeof Request>) = jest.fn();
+        const mockedRequest = (RequestGQL as jest.Mocked<typeof RequestGQL>) = jest.fn();
+        // const mockedRetry = (retry as jest.Mocked<typeof retry>) = jest.fn();
 
-        mockedRequest.mockImplementationOnce(async () => { throw new Error('Unexpected error occured.') });
+        // mockedRequest.mockImplementationOnce((d: any) => d);
+        mockedRequest.mockImplementationOnce(() => { throw new Error('Unexpected error occured.'); });
 
-        const stores: IResponse = await storesBySearchTerm('33487', '20');
+        const stores: IResponse = await storesBySearchTerm(params, res);
         expect(stores.body).toBeUndefined()
         expect(stores.success).toBeFalsy();
         expect(stores.error).toBe('Unexpected error occured.')
+    });
+
+    it("Should return errors", async () => {
+        // request function in storesBySearchTerm function  is mocked to not hit the API
+        const mockedRequest = (RequestGQL as jest.Mocked<typeof RequestGQL>) = jest.fn();
+
+        mockedRequest.mockImplementationOnce(async () => ({
+            "errors": [
+                {
+                    "message": "child \"distance\" fails because [\"distance\" must be a positive number]",
+                    "locations": [
+                        {
+                            "line": 3,
+                            "column": 7
+                        }
+                    ],
+                    "path": [
+                        "storesBySearchTerm"
+                    ]
+                }
+            ]
+        }));
+
+        const params = { params: { zipCode: '33487', radius: '-1' } };
+        const stores: IResponse = await storesBySearchTerm(params, res);
+        expect(stores.body).toBeDefined();
+        expect(stores.success).toBeTruthy();
+        expect(stores.body.errors.length).toBe(1)
+    });
+
+    it("Should return an error and retry", async () => {
+        // request function in storesBySearchTerm function  is mocked to not hit the API
+        const mockedRequest = (RequestGQL as jest.Mocked<typeof RequestGQL>) = jest.fn();
+        const body = {
+            "storesBySearchTerm": {
+                "stores": [
+                    { "id": 2406, "displayName": "Delray Beach Neighborhood Market", "address": { "postalCode": "33483" }, "distance": 1.65 },
+                    { "id": 1589, "displayName": "Delray Beach Supercenter", "address": { "postalCode": "33484" }, "distance": 2.64 }
+                ]
+            }
+        }
+        mockedRequest
+            .mockImplementationOnce(async () => ({
+                statusCode: 503,
+                error: 'Service Unavailable',
+                message: 'Service Unavailable',
+                status: 520
+            }))
+            .mockImplementationOnce(async () => body);
+
+        const params = { params: { zipCode: '72712', radius: '30' } };
+        const stores: IResponse = await storesBySearchTerm(params, res);
+
+        expect(stores.body).toBeDefined();
+        expect(stores.success).toBeTruthy();
+        expect(stores.body.storesBySearchTerm.stores.length).toBe(2);
+        expect(stores.body).toStrictEqual(body);
+    });
+
+    it("Should return an error on retry function", async () => {
+        // request function in storesBySearchTerm function  is mocked to not hit the API
+        const mockedRequest = (RequestGQL as jest.Mocked<typeof RequestGQL>) = jest.fn();
+        const mockedStoresBySearchTerm = (storesBySearchTerm as jest.Mocked<typeof storesBySearchTerm>) = jest.fn();
+      
+        mockedStoresBySearchTerm
+            .mockImplementationOnce(async () => {});
+
+        const params = { params: { zipCode: '72712', radius: '30' } };
+        const stores: IResponse = await retry(0, params, res,() => {
+            throw new Error("Random error.")
+        } );
+
+        expect(stores.success).toBeFalsy();
+        expect(stores.error).toBe('Random error.');
     });
 });
