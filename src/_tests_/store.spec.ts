@@ -1,11 +1,12 @@
 import { IResponse } from "../definitions/data";
 import { storesBySearchTerm, RequestGQL } from "../store";
-import { retry } from "../utils";
+import { retry, sleep, WAIT} from "../utils";
 
 const res = {
     status: () => { return { json: (d: any) => d } },
     json: (d: any) => d
 };
+
 describe("Walmart stores by location", () => {
 
     it("Should return 0 stores when zipCode and radius are empty", async () => {
@@ -110,9 +111,7 @@ describe("Walmart stores by location", () => {
         const params = { params: { zipCode: '33487', radius: '20' } };
         // request function in storesBySearchTerm function  is mocked to not hit the API
         const mockedRequest = (RequestGQL as jest.Mocked<typeof RequestGQL>) = jest.fn();
-        // const mockedRetry = (retry as jest.Mocked<typeof retry>) = jest.fn();
 
-        // mockedRequest.mockImplementationOnce((d: any) => d);
         mockedRequest.mockImplementationOnce(() => { throw new Error('Unexpected error occured.'); });
 
         const stores: IResponse = await storesBySearchTerm(params, res);
@@ -167,7 +166,10 @@ describe("Walmart stores by location", () => {
                 message: 'Service Unavailable',
                 status: 520
             }))
-            .mockImplementationOnce(async () => body);
+            .mockImplementationOnce(async () => {
+                await sleep(WAIT);
+                return body;
+            });
 
         const params = { params: { zipCode: '72712', radius: '30' } };
         const stores: IResponse = await storesBySearchTerm(params, res);
@@ -180,7 +182,6 @@ describe("Walmart stores by location", () => {
 
     it("Should return an error on retry function", async () => {
         // request function in storesBySearchTerm function  is mocked to not hit the API
-        const mockedRequest = (RequestGQL as jest.Mocked<typeof RequestGQL>) = jest.fn();
         const mockedStoresBySearchTerm = (storesBySearchTerm as jest.Mocked<typeof storesBySearchTerm>) = jest.fn();
       
         mockedStoresBySearchTerm
